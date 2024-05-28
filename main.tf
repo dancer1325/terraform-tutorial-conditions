@@ -13,7 +13,7 @@ data "aws_availability_zones" "available" {
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "3.14.0"
+  version = "5.8.1"
 
   cidr = var.aws_vpc_cidr
 
@@ -33,11 +33,14 @@ data "aws_ami" "amazon_linux" {
 
   filter {
     name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+    // NOT exist anymore
+    //values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+    values = ["amzn2-ami-*-hvm-*x86_64-*"]
   }
 }
 
 module "app" {
+  // local module
   source = "./modules/example-app-deployment"
 
   aws_instance_count = var.aws_instance_count

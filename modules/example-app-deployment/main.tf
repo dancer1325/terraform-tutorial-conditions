@@ -4,9 +4,13 @@ data "aws_subnet" "public" {
   id = var.aws_public_subnet_ids[count.index]
 }
 
+data "aws_ec2_instance_type" "app" {
+  instance_type = var.aws_instance_type
+}
+
 module "app_security_group" {
   source  = "terraform-aws-modules/security-group/aws//modules/web"
-  version = "4.9.0"
+  version = "5.1.2"
 
   name        = "app-server-sg"
   description = "Security group for app servers with HTTP ports open within VPC"
@@ -17,7 +21,7 @@ module "app_security_group" {
 
 module "lb_security_group" {
   source  = "terraform-aws-modules/security-group/aws//modules/web"
-  version = "4.9.0"
+  version = "5.1.2"
 
   name = "load-balancer-sg"
 
@@ -34,7 +38,7 @@ resource "random_string" "lb_id" {
 
 module "elb_http" {
   source  = "terraform-aws-modules/elb/aws"
-  version = "3.0.1"
+  version = "4.0.2"
 
   name     = "app-lb-${random_string.lb_id.result}"
   internal = false
@@ -62,6 +66,7 @@ module "elb_http" {
 }
 
 resource "aws_instance" "app" {
+  # -- can refer to -- root module's variables
   count = var.aws_instance_count
 
   instance_type = var.aws_instance_type
@@ -69,4 +74,28 @@ resource "aws_instance" "app" {
 
   subnet_id              = var.aws_private_subnet_ids[count.index % length(var.aws_private_subnet_ids)]
   vpc_security_group_ids = [module.app_security_group.security_group_id]
+
+  # preconditions to the lifecycle
+  lifecycle {
+    # check application traffic -- is spread evenly across -- subnets
+    precondition {
+      condition     = var.aws_instance_count % length(var.aws_private_subnet_ids) == 0
+      error_message = "The number of instances (${var.aws_instance_count}) must be evenly divisible by the number of private subnets (${length(var.aws_private_subnet_ids)})."
+    }
+    precondition {
+      condition     = data.aws_ec2_instance_type.app.ebs_optimized_support != "unsupported"
+      error_message = "The EC2 instance type (${var.aws_instance_type}) must support EBS optimization."
+    }
+  }
+}
+
+data "aws_vpc" "app" {
+  id = var.aws_vpc_id
+  # postcondition to lifecycle
+  lifecycle {
+    postcondition {
+      condition     = self.enable_dns_support == true   #self object points to data.aws_vpc.app -> related to VPC created in root module
+      error_message = "The selected VPC must have DNS support enabled."
+    }
+  }
 }
